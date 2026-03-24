@@ -1,0 +1,14 @@
+[package]
+name = "fws-commp"
+edition = "2021"
+version = "0.1.0"
+description = "Filecoin CommP (piece commitment) computation - adapted from github.com/aidan46/WASM-CommP"
+
+[features]
+default = ["std"]
+std = ["sha2/std"]
+
+[dependencies]
+byte-slice-cast = "1.2"
+rs_merkle = "1.5"
+sha2 = { version = "0.10", default-features = false }

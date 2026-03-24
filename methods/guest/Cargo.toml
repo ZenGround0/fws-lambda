@@ -1,0 +1,17 @@
+[package]
+name = "fws-lambda-guest"
+edition = "2021"
+version = "0.1.0"
+
+[workspace]
+
+[[bin]]
+name = "lambda"
+path = "src/bin/lambda.rs"
+
+[dependencies]
+risc0-zkvm = { version = "2.0", default-features = false, features = ["std"] }
+wasmi = { version = "0.41", default-features = false }
+fws-lambda-core = { path = "../../core", default-features = false }
+fws-commp = { path = "../../commp", default-features = false }
+serde = { version = "1", default-features = false, features = ["derive"] }

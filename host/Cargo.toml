@@ -1,0 +1,17 @@
+[package]
+name = "fws-lambda-host"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+fws-lambda-core = { workspace = true }
+fws-lambda-methods = { workspace = true }
+fws-commp = { workspace = true }
+risc0-zkvm = { workspace = true, features = ["client", "prove"] }
+serde = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+hex = "0.4"

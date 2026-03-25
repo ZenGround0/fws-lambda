@@ -3,7 +3,7 @@ use clap::Parser;
 use fws_commp::calc_commp;
 use fws_lambda_core::GuestInput;
 use fws_lambda_methods::LAMBDA_ELF;
-use risc0_zkvm::{default_prover, ExecutorEnv};
+use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, InnerReceipt};
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -57,9 +57,9 @@ fn main() -> Result<()> {
     // Set up the executor environment with the guest input.
     let env = ExecutorEnv::builder().write(&guest_input)?.build()?;
 
-    // Run the prover.
+    // Run the prover with Groth16 output for on-chain verification.
     let prover = default_prover();
-    let prove_info = prover.prove(env, LAMBDA_ELF)?;
+    let prove_info = prover.prove_with_opts(env, LAMBDA_ELF, &ProverOpts::groth16())?;
     let receipt = prove_info.receipt;
 
     // The journal is raw bytes: inputCommp(32) || wasmCommp(32) || outputCommp(32)
@@ -93,12 +93,21 @@ fn main() -> Result<()> {
     // Write output files if requested.
     if let Some(dir) = &args.output_dir {
         std::fs::create_dir_all(dir)?;
-        // Serialize the full receipt (seal + journal). The worker
-        // deserializes this and extracts the seal for on-chain submission.
-        let receipt_bytes = borsh::to_vec(&receipt)?;
-        std::fs::write(format!("{dir}/receipt.bin"), &receipt_bytes)?;
+
+        // Extract the Groth16 seal bytes for on-chain verification.
+        let seal_bytes = match &receipt.inner {
+            InnerReceipt::Groth16(groth16_receipt) => {
+                groth16_receipt.seal.clone()
+            }
+            other => {
+                anyhow::bail!("expected Groth16 receipt, got {:?}", std::mem::discriminant(other));
+            }
+        };
+
+        std::fs::write(format!("{dir}/seal.bin"), &seal_bytes)?;
         std::fs::write(format!("{dir}/journal.bin"), &journal_bytes)?;
         std::fs::write(format!("{dir}/output.bin"), &output_data)?;
+        println!("  Seal size:     {} bytes", seal_bytes.len());
         println!("  Output written to {dir}/");
     }
 

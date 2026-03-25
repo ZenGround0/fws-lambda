@@ -2,12 +2,14 @@
 pragma solidity ^0.8.25;
 
 import {Test, console} from "forge-std/Test.sol";
-import {JobRegistry, IRiscZeroVerifier, IPDPVerifierRead, IJobRegistry} from "../src/JobRegistry.sol";
+import {JobRegistry, IPDPVerifierRead, IJobRegistry} from "../src/JobRegistry.sol";
+import {IRiscZeroVerifier, Receipt} from "risc0/IRiscZeroVerifier.sol";
 import {Cids} from "pdp/Cids.sol";
 
 /// @dev Mock verifier that always accepts proofs (for testing only).
 contract MockVerifier is IRiscZeroVerifier {
     function verify(bytes calldata, bytes32, bytes32) external pure {}
+    function verifyIntegrity(Receipt calldata) external pure {}
 }
 
 /// @dev Mock PDP verifier that returns controlled piece data.

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["core", "commp", "methods", "host"]
+exclude = ["examples/sha256_job"]
 
 [workspace.package]
 edition = "2021"

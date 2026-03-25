@@ -1,4 +1,4 @@
-export { createSynapseClient, uploadToWarmStorage, downloadFromWarmStorage, prepareStorage } from "./synapse.js"
-export { createChainClients, postJob, submitProof, watchJobPosted, getJob, type PdpWitness } from "./chain.js"
-export { commpToCid, cidToCommp } from "./cid.js"
-export { loadConfig, type Config } from "./config.js"
+export { createSynapseClient, uploadToWarmStorage, downloadFromWarmStorage, prepareStorage } from "./synapse.ts"
+export { createChainClients, postJob, submitProof, watchJobPosted, getJob, getPieceCidFromPdp, type PdpWitness } from "./chain.ts"
+export { commpToCid, cidToCommp, base32Encode } from "./cid.ts"
+export { loadConfig, type Config } from "./config.ts"

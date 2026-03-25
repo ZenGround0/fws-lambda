@@ -3,11 +3,7 @@ pragma solidity ^0.8.25;
 
 import {IJobRegistry} from "./IJobRegistry.sol";
 import {Cids} from "pdp/Cids.sol";
-
-/// @notice Minimal verifier interface matching RISC Zero's on-chain Groth16 verifier.
-interface IRiscZeroVerifier {
-    function verify(bytes calldata seal, bytes32 imageId, bytes32 journalDigest) external view;
-}
+import {IRiscZeroVerifier} from "risc0/IRiscZeroVerifier.sol";
 
 /// @notice Minimal interface for querying the PDP Verifier contract.
 interface IPDPVerifierRead {

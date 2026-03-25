@@ -23,6 +23,9 @@ importers:
 
   shared:
     dependencies:
+      '@filoz/synapse-core':
+        specifier: latest
+        version: 0.3.1(typescript@6.0.2)(viem@2.47.6(typescript@6.0.2)(zod@4.3.6))
       '@filoz/synapse-sdk':
         specifier: latest
         version: 0.40.0(typescript@6.0.2)(viem@2.47.6(typescript@6.0.2)(zod@4.3.6))

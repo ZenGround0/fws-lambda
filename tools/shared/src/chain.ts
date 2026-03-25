@@ -9,7 +9,7 @@ import {
 } from "viem"
 import { privateKeyToAccount } from "viem/accounts"
 import { filecoinCalibration, filecoin } from "viem/chains"
-import type { Config } from "./config.js"
+import type { Config } from "./config.ts"
 
 export interface PdpWitness {
   dataSetId: bigint
@@ -18,9 +18,9 @@ export interface PdpWitness {
 
 // JobRegistry ABI — just the functions and events we need.
 const JOB_REGISTRY_ABI = parseAbi([
-  "function postJob(bytes32 inputCommp, bytes32 wasmCommp, tuple(uint256 dataSetId, uint256 pieceId) inputWitness, tuple(uint256 dataSetId, uint256 pieceId) wasmWitness) external payable returns (uint256)",
-  "function submitProof(uint256 jobId, bytes seal, bytes journal, tuple(uint256 dataSetId, uint256 pieceId) outputWitness) external",
-  "function getJob(uint256 jobId) external view returns (tuple(bytes32 inputCommp, bytes32 wasmCommp, address submitter, uint256 bounty, uint8 status, bytes32 outputCommp, address worker, tuple(uint256 dataSetId, uint256 pieceId) inputWitness, tuple(uint256 dataSetId, uint256 pieceId) wasmWitness))",
+  "function postJob(bytes32 inputCommp, bytes32 wasmCommp, (uint256, uint256) inputWitness, (uint256, uint256) wasmWitness) external payable returns (uint256)",
+  "function submitProof(uint256 jobId, bytes seal, bytes journal, (uint256, uint256) outputWitness) external",
+  "function getJob(uint256 jobId) external view returns ((bytes32, bytes32, address, uint256, uint8, bytes32, address, (uint256, uint256), (uint256, uint256)))",
   "function nextJobId() external view returns (uint256)",
   "event JobPosted(uint256 indexed jobId, bytes32 inputCommp, bytes32 wasmCommp, address indexed submitter, uint256 bounty)",
   "event JobCompleted(uint256 indexed jobId, bytes32 outputCommp, address indexed worker)",
@@ -65,7 +65,12 @@ export async function postJob(
     address: contractAddress,
     abi: JOB_REGISTRY_ABI,
     functionName: "postJob",
-    args: [inputCommp, wasmCommp, inputWitness, wasmWitness],
+    args: [
+      inputCommp,
+      wasmCommp,
+      [inputWitness.dataSetId, inputWitness.pieceId],
+      [wasmWitness.dataSetId, wasmWitness.pieceId],
+    ],
     value: bountyWei,
     chain: walletClient.chain,
   } as any)
@@ -97,7 +102,7 @@ export async function submitProof(
     address: contractAddress,
     abi: JOB_REGISTRY_ABI,
     functionName: "submitProof",
-    args: [jobId, seal, journal, outputWitness],
+    args: [jobId, seal, journal, [outputWitness.dataSetId, outputWitness.pieceId]],
     chain: walletClient.chain,
   } as any)
 
@@ -129,6 +134,27 @@ export function watchJobPosted(
   })
 
   return unwatch
+}
+
+/** Read the full CommPv2 CID bytes from the PDP verifier for a given piece. */
+export async function getPieceCidFromPdp(
+  clients: ChainClients,
+  pdpVerifierAddress: Hex,
+  dataSetId: bigint,
+  pieceId: bigint,
+): Promise<Hex> {
+  const PDP_ABI = parseAbi([
+    "function getPieceCid(uint256 setId, uint256 pieceId) external view returns ((bytes))",
+  ])
+
+  const result = await clients.publicClient.readContract({
+    address: pdpVerifierAddress,
+    abi: PDP_ABI,
+    functionName: "getPieceCid",
+    args: [dataSetId, pieceId],
+  }) as readonly [Hex]
+
+  return result[0]
 }
 
 /** Read job details from the contract. */

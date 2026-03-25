@@ -30,7 +30,7 @@ async function main() {
 
   const config = loadConfig()
   const clients = createChainClients(config)
-  const synapse = createSynapseClient(clients.walletClient as any)
+  const synapse = createSynapseClient(config)
 
   // Read files.
   const wasmBytes = new Uint8Array(await readFile(values.wasm))

@@ -1,2 +1,4 @@
 forge-std/=lib/forge-std/src/
 pdp/=lib/pdp/src/
+risc0/=lib/risc0-ethereum/contracts/src/
+openzeppelin/=lib/openzeppelin-contracts/

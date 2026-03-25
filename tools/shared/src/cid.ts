@@ -1,13 +1,67 @@
 // CommP <-> CID conversion for Filecoin piece commitments.
 //
-// CIDv1 format: version(1) + multicodec(fil-commitment-unsealed=0xf101)
-//   + multihash(sha2-256-trunc254-padded=0x1012, length=32, digest)
-// Encoded as multibase base32lower with "b" prefix.
+// Supports two CID formats:
+//
+// CommPv1 (legacy): CIDv1 | fil-commitment-unsealed (0xf101) | sha2-256-trunc254-padded (0x1012) | 32-byte digest
+// CommPv2 (FRC-0069): CIDv1 | raw (0x55) | fr32-sha2-256-trunc254-padded-binary-tree (0x9120) | multihash-length | uvarint-padding | uint8-height | 32-byte digest
 
 const FIL_COMMITMENT_UNSEALED = 0xf101n
 const SHA2_256_TRUNC254_PADDED = 0x1012n
+const RAW_CODEC = 0x55n
+const FR32_SHA2_256_TRUNC254_PADDED_BINARY_TREE = 0x1011n
 
-/** Encode a raw 32-byte CommP as a Filecoin CIDv1 string. */
+/** Extract the raw 32-byte CommP digest from either a CommPv1 or CommPv2 CID string. */
+export function cidToCommp(cid: string): Uint8Array {
+  if (!cid.startsWith("b")) throw new Error("expected multibase base32lower CID (b prefix)")
+
+  const bytes = base32Decode(cid.slice(1))
+  let offset = 0
+
+  // Version
+  const [version, vLen] = decodeVarint(bytes, offset)
+  offset += vLen
+  if (version !== 1n) throw new Error(`expected CIDv1, got v${version}`)
+
+  // Multicodec
+  const [codec, cLen] = decodeVarint(bytes, offset)
+  offset += cLen
+
+  if (codec === FIL_COMMITMENT_UNSEALED) {
+    // CommPv1: multicodec 0xf101, multihash 0x1012, 32-byte digest
+    const [mhCode, mhLen] = decodeVarint(bytes, offset)
+    offset += mhLen
+    if (mhCode !== SHA2_256_TRUNC254_PADDED) {
+      throw new Error(`expected sha2-256-trunc254-padded (0x1012), got 0x${mhCode.toString(16)}`)
+    }
+    const [digestLen, dlLen] = decodeVarint(bytes, offset)
+    offset += dlLen
+    if (digestLen !== 32n) throw new Error(`expected 32-byte digest, got ${digestLen}`)
+    return bytes.slice(offset, offset + 32)
+
+  } else if (codec === RAW_CODEC) {
+    // CommPv2 (FRC-0069): multicodec 0x55, multihash 0x9120, then mh-length, padding, height, digest
+    const [mhCode, mhLen] = decodeVarint(bytes, offset)
+    offset += mhLen
+    if (mhCode !== FR32_SHA2_256_TRUNC254_PADDED_BINARY_TREE) {
+      throw new Error(`expected fr32-sha2-256-trunc254-padded-binary-tree (0x9120), got 0x${mhCode.toString(16)}`)
+    }
+    // Multihash length (total bytes of: padding + height + digest)
+    const [_mhLength, mhLenLen] = decodeVarint(bytes, offset)
+    offset += mhLenLen
+    // Padding (uvarint)
+    const [_padding, padLen] = decodeVarint(bytes, offset)
+    offset += padLen
+    // Height (1 byte)
+    offset += 1
+    // Last 32 bytes are the digest
+    return bytes.slice(offset, offset + 32)
+
+  } else {
+    throw new Error(`unsupported CID multicodec: 0x${codec.toString(16)}`)
+  }
+}
+
+/** Encode a raw 32-byte CommP as a CommPv1 CID string (for compatibility). */
 export function commpToCid(commp: Uint8Array): string {
   if (commp.length !== 32) throw new Error("commp must be 32 bytes")
 
@@ -24,40 +78,6 @@ export function commpToCid(commp: Uint8Array): string {
   for (const b of commp) buf.push(b)
 
   return "b" + base32Encode(new Uint8Array(buf))
-}
-
-/** Decode a Filecoin piece commitment CID to raw 32-byte CommP. */
-export function cidToCommp(cid: string): Uint8Array {
-  if (!cid.startsWith("b")) throw new Error("expected multibase base32lower CID (b prefix)")
-
-  const bytes = base32Decode(cid.slice(1))
-  let offset = 0
-
-  // Version
-  const [version, vLen] = decodeVarint(bytes, offset)
-  offset += vLen
-  if (version !== 1n) throw new Error(`expected CIDv1, got v${version}`)
-
-  // Multicodec
-  const [codec, cLen] = decodeVarint(bytes, offset)
-  offset += cLen
-  if (codec !== FIL_COMMITMENT_UNSEALED) {
-    throw new Error(`expected fil-commitment-unsealed (0xf101), got 0x${codec.toString(16)}`)
-  }
-
-  // Multihash code
-  const [mhCode, mhLen] = decodeVarint(bytes, offset)
-  offset += mhLen
-  if (mhCode !== SHA2_256_TRUNC254_PADDED) {
-    throw new Error(`expected sha2-256-trunc254-padded (0x1012), got 0x${mhCode.toString(16)}`)
-  }
-
-  // Digest length
-  const [digestLen, dlLen] = decodeVarint(bytes, offset)
-  offset += dlLen
-  if (digestLen !== 32n) throw new Error(`expected 32-byte digest, got ${digestLen}`)
-
-  return bytes.slice(offset, offset + 32)
 }
 
 // --- varint encoding/decoding ---
@@ -89,7 +109,7 @@ function decodeVarint(buf: Uint8Array, offset: number): [bigint, number] {
 
 const B32_ALPHABET = "abcdefghijklmnopqrstuvwxyz234567"
 
-function base32Encode(data: Uint8Array): string {
+export function base32Encode(data: Uint8Array): string {
   let bits = 0n
   let numBits = 0
   let result = ""

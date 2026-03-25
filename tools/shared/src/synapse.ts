@@ -1,15 +1,22 @@
 import { Synapse } from "@filoz/synapse-sdk"
-import type { Client, Transport, Chain, Account } from "viem"
+import { createWalletClient, http } from "viem"
+import { privateKeyToAccount } from "viem/accounts"
+import { getChain } from "@filoz/synapse-core/chains"
+import type { Config } from "./config.ts"
 
-let synapseInstance: Synapse | null = null
-
-/** Initialize the Synapse SDK client. */
-export function createSynapseClient(walletClient: Client<Transport, Chain, Account>): Synapse {
-  synapseInstance = new Synapse({
-    client: walletClient as any,
+/** Initialize the Synapse SDK client using synapse-core's chain definitions. */
+export function createSynapseClient(config: Config): Synapse {
+  const chain = getChain(config.rpcUrl.includes("calibration") ? 314159 : 314)
+  const account = privateKeyToAccount(config.privateKey)
+  const client = createWalletClient({
+    account,
+    chain,
+    transport: http(config.rpcUrl),
+  })
+  return new Synapse({
+    client,
     source: "fws-lambda",
   })
-  return synapseInstance
 }
 
 export interface UploadInfo {
@@ -37,7 +44,13 @@ export async function uploadToWarmStorage(
   const result = await synapse.storage.upload(data)
 
   if (!result.complete) {
-    const errors = result.failedAttempts.map((f: any) => f.error).join(", ")
+    console.error("Upload failed. Details:")
+    console.error("  Copies:", JSON.stringify(result.copies, (_, v) => typeof v === "bigint" ? v.toString() : v, 2))
+    console.error("  Failed attempts:", JSON.stringify(result.failedAttempts, (_, v) => typeof v === "bigint" ? v.toString() : v, 2))
+    const errors = result.failedAttempts.map((f: any) => {
+      const err = f.error
+      return typeof err === "object" ? JSON.stringify(err, (_, v) => typeof v === "bigint" ? v.toString() : v) : String(err)
+    }).join("; ")
     throw new Error(`Upload incomplete: ${errors}`)
   }
 

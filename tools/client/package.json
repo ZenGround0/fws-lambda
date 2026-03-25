@@ -1,0 +1,12 @@
+{
+  "name": "@fws-lambda/client",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "fws-client": "src/index.ts"
+  },
+  "dependencies": {
+    "@fws-lambda/shared": "workspace:*"
+  }
+}

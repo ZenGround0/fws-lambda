@@ -1,7 +1,7 @@
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use clap::Parser;
 use fws_commp::calc_commp;
-use fws_lambda_core::{GuestInput, GuestOutput};
+use fws_lambda_core::GuestInput;
 use fws_lambda_methods::LAMBDA_ELF;
 use risc0_zkvm::{default_prover, ExecutorEnv};
 use tracing::info;
@@ -16,6 +16,10 @@ struct Args {
     /// Path to the input data file
     #[arg(long)]
     input: String,
+
+    /// Directory to write output files (seal.bin, journal.bin, output.bin)
+    #[arg(long)]
+    output_dir: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -46,31 +50,88 @@ fn main() -> Result<()> {
     let guest_input = GuestInput {
         input_commp,
         wasm_commp,
-        input_data,
-        wasm_bytecode,
+        input_data: input_data.clone(),
+        wasm_bytecode: wasm_bytecode.clone(),
     };
 
     // Set up the executor environment with the guest input.
-    let env = ExecutorEnv::builder()
-        .write(&guest_input)?
-        .build()?;
+    let env = ExecutorEnv::builder().write(&guest_input)?.build()?;
 
-    // Run the prover (uses RISC0_DEV_MODE=1 env var to skip real proving).
+    // Run the prover.
     let prover = default_prover();
     let prove_info = prover.prove(env, LAMBDA_ELF)?;
     let receipt = prove_info.receipt;
 
-    // Extract the public outputs from the journal.
-    let output: GuestOutput = receipt.journal.decode()?;
+    // The journal is raw bytes: inputCommp(32) || wasmCommp(32) || outputCommp(32)
+    let journal_bytes = receipt.journal.bytes.clone();
+    ensure!(journal_bytes.len() == 96, "unexpected journal length: {}", journal_bytes.len());
 
-    println!("Proof generated successfully!");
-    println!("  Input CommP:  {}", hex::encode(output.input_commp));
-    println!("  WASM CommP:   {}", hex::encode(output.wasm_commp));
-    println!("  Output CommP: {}", hex::encode(output.output_commp));
+    let mut output_commp = [0u8; 32];
+    output_commp.copy_from_slice(&journal_bytes[64..96]);
 
     // Verify the receipt locally.
     receipt.verify(fws_lambda_methods::LAMBDA_ID)?;
-    println!("  Receipt verified locally.");
+    info!("receipt verified locally");
+
+    // Re-execute WASM natively to capture the output data.
+    // This is fast (no proving overhead) and lets us get the actual output bytes.
+    let output_data = execute_wasm_native(&wasm_bytecode, &input_data)?;
+
+    // Verify the native execution matches what the guest proved.
+    let computed_output_commp = calc_commp(&output_data);
+    ensure!(
+        computed_output_commp == output_commp,
+        "native WASM execution produced different output than proven"
+    );
+
+    println!("Proof generated successfully!");
+    println!("  Input CommP:  {}", hex::encode(input_commp));
+    println!("  WASM CommP:   {}", hex::encode(wasm_commp));
+    println!("  Output CommP: {}", hex::encode(output_commp));
+    println!("  Output size:  {} bytes", output_data.len());
+
+    // Write output files if requested.
+    if let Some(dir) = &args.output_dir {
+        std::fs::create_dir_all(dir)?;
+        // Serialize the full receipt (seal + journal). The worker
+        // deserializes this and extracts the seal for on-chain submission.
+        let receipt_bytes = borsh::to_vec(&receipt)?;
+        std::fs::write(format!("{dir}/receipt.bin"), &receipt_bytes)?;
+        std::fs::write(format!("{dir}/journal.bin"), &journal_bytes)?;
+        std::fs::write(format!("{dir}/output.bin"), &output_data)?;
+        println!("  Output written to {dir}/");
+    }
 
     Ok(())
+}
+
+/// Execute WASM natively (outside the zkVM) to capture output data.
+fn execute_wasm_native(wasm_bytecode: &[u8], input_data: &[u8]) -> Result<Vec<u8>> {
+    use wasmi::*;
+
+    let engine = Engine::default();
+    let module = Module::new(&engine, wasm_bytecode)?;
+
+    let mut store = Store::new(&engine, ());
+    let linker = Linker::<()>::new(&engine);
+
+    let instance = linker
+        .instantiate(&mut store, &module)?
+        .start(&mut store)?;
+
+    let memory = instance
+        .get_memory(&store, "memory")
+        .ok_or_else(|| anyhow::anyhow!("wasm module must export memory"))?;
+
+    memory.write(&mut store, 0, input_data)?;
+
+    let process = instance.get_typed_func::<(i32, i32), i32>(&store, "process")?;
+
+    let output_len = process.call(&mut store, (0, input_data.len() as i32))?;
+
+    let output_offset = input_data.len();
+    let mut output = vec![0u8; output_len as usize];
+    memory.read(&store, output_offset, &mut output)?;
+
+    Ok(output)
 }

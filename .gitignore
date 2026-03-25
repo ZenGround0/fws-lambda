@@ -2,4 +2,7 @@
 contracts/out
 contracts/cache
 contracts/lib
+tools/node_modules
+tools/*/node_modules
+tools/dist
 .env

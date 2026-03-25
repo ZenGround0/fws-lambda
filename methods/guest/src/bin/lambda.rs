@@ -30,13 +30,12 @@ fn main() {
     // Compute the output CommP.
     let output_commp = calc_commp(&output_data);
 
-    // Commit public outputs to the journal.
-    let output = GuestOutput {
-        input_commp: input.input_commp,
-        wasm_commp: input.wasm_commp,
-        output_commp,
-    };
-    env::commit(&output);
+    // Commit public outputs to the journal as raw bytes.
+    // The journal is exactly 96 bytes: inputCommp || wasmCommp || outputCommp
+    // This matches what the on-chain verifier contract expects.
+    env::commit_slice(&input.input_commp);
+    env::commit_slice(&input.wasm_commp);
+    env::commit_slice(&output_commp);
 }
 
 /// Run a WASM module over input data and return the output.

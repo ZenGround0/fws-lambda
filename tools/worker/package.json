@@ -1,0 +1,12 @@
+{
+  "name": "@fws-lambda/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "fws-worker": "src/index.ts"
+  },
+  "dependencies": {
+    "@fws-lambda/shared": "workspace:*"
+  }
+}

@@ -3,7 +3,7 @@ use clap::Parser;
 use fws_commp::calc_commp;
 use fws_lambda_core::GuestInput;
 use fws_lambda_methods::LAMBDA_ELF;
-use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts, InnerReceipt};
+use risc0_zkvm::{default_prover, sha::Digestible, ExecutorEnv, Groth16Receipt, Groth16ReceiptVerifierParameters, InnerReceipt, ProverOpts, ReceiptClaim};
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -94,10 +94,11 @@ fn main() -> Result<()> {
     if let Some(dir) = &args.output_dir {
         std::fs::create_dir_all(dir)?;
 
-        // Extract the Groth16 seal bytes for on-chain verification.
+        // Extract the Groth16 seal and encode it for on-chain verification.
+        // The on-chain verifier expects: 4-byte selector + ABI-encoded Seal(uint256[2] a, uint256[2][2] b, uint256[2] c)
         let seal_bytes = match &receipt.inner {
             InnerReceipt::Groth16(groth16_receipt) => {
-                groth16_receipt.seal.clone()
+                encode_groth16_seal_for_evm(&groth16_receipt)
             }
             other => {
                 anyhow::bail!("expected Groth16 receipt, got {:?}", std::mem::discriminant(other));
@@ -143,4 +144,29 @@ fn execute_wasm_native(wasm_bytecode: &[u8], input_data: &[u8]) -> Result<Vec<u8
     memory.read(&store, output_offset, &mut output)?;
 
     Ok(output)
+}
+
+/// Encode a Groth16 receipt seal for on-chain EVM verification.
+///
+/// Format: 4-byte selector (from verifier parameters digest) +
+/// ABI-encoded Seal struct (uint256[2] a, uint256[2][2] b, uint256[2] c).
+///
+/// The raw seal from risc0 is 256 bytes: a(64) + b(128) + c(64).
+/// Each element is a 32-byte big-endian uint256.
+/// ABI encoding adds dynamic offsets for the struct.
+fn encode_groth16_seal_for_evm(receipt: &Groth16Receipt<ReceiptClaim>) -> Vec<u8> {
+    let raw = &receipt.seal;
+
+    // The selector is the first 4 bytes of the verifier parameters digest.
+    let params_digest = Groth16ReceiptVerifierParameters::default().digest();
+    let selector = &params_digest.as_bytes()[..4];
+
+    // ABI encode: Seal is a struct with fixed-size arrays, so it encodes as
+    // concatenated uint256 values (no dynamic offsets needed for fixed arrays).
+    // a[0], a[1], b[0][0], b[0][1], b[1][0], b[1][1], c[0], c[1]
+    // Each is 32 bytes, total 256 bytes — same as the raw seal.
+    let mut encoded = Vec::with_capacity(4 + raw.len());
+    encoded.extend_from_slice(selector);
+    encoded.extend_from_slice(raw);
+    encoded
 }

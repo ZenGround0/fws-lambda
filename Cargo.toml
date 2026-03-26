@@ -11,8 +11,8 @@ version = "0.1.0"
 fws-lambda-core = { path = "core" }
 fws-lambda-methods = { path = "methods" }
 fws-commp = { path = "commp" }
-risc0-zkvm = "2.0"
-risc0-build = "2.0"
+risc0-zkvm = "=3.0.5"
+risc0-build = "=3.0.5"
 serde = { version = "1", features = ["derive"] }
 anyhow = "1"
 sha2 = "0.10"
